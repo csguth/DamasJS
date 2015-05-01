@@ -1,7 +1,3 @@
-var tabuleiroUI;
-var LINHAS = 8;
-var COLUNAS = 8;
-
 var GUI = {
 	desenharTabuleiro: function(id, tabuleiro)
 	{
