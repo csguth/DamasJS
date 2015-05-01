@@ -1,6 +1,7 @@
 var GUI = {
 	desenharTabuleiro: function(id, tabuleiro)
 	{
+		console.log(tabuleiro.celulas[3][0]);
 		var tabuleiroDOM = document.querySelector(id);
 		while(tabuleiroDOM.firstChild)
 			tabuleiroDOM.removeChild(tabuleiroDOM.firstChild);
@@ -12,7 +13,7 @@ var GUI = {
 				novaCelula.setAttribute('linha', i);
 				novaCelula.setAttribute('coluna', j);
 				novaCelula.className = 'celula celula-' + tabuleiro.celulas[i][j].cor;
-				if(tabuleiro.celulas[i][j].marcada)
+				if(tabuleiro.celulas[i][j].marcada || tabuleiro.celulas[i][j].pulo)
 					novaCelula.className += ' celula-movimento';
 				if(!tabuleiro.celulas[i][j].peca.ehVazia())
 				{
@@ -44,6 +45,28 @@ var GUI = {
 			else
 				tabuleiro.estado = DamasJS.Estado.ESPERANDO_BRANCA;
 		}
+		else if(tabuleiro.celulas[i][j].pulo)
+		{
+			console.log(tabuleiro.pulos);
+			for(var k = 0; k < tabuleiro.pulos.length; k++)
+			{
+				if(tabuleiro.pulos[k].destino == tabuleiro.celulas[i][j])
+				{
+					tabuleiro.selecionada.pularPara(tabuleiro.pulos[k].destino, tabuleiro.pulos[k].meio);
+					tabuleiro.selecionar(tabuleiro.pulos[k].destino);
+					if(tabuleiro.pulos.length == 0)
+					{
+						tabuleiro.desmarcarTodas();
+						if(tabuleiro.estado == DamasJS.Estado.ESPERANDO_BRANCA)
+							tabuleiro.estado =  DamasJS.Estado.ESPERANDO_PRETA;
+						else
+							tabuleiro.estado = DamasJS.Estado.ESPERANDO_BRANCA;
+						break;	
+					}
+					
+				}
+			}
+		}
 		else
 		{
 			if(tabuleiro.estado == DamasJS.Estado.ESPERANDO_BRANCA &&
@@ -64,19 +87,23 @@ var DamasJS = {
 	},
 	Cor: {
 		PRETA: 'preta',
-		BRANCA: 'branca'
+		BRANCA: 'branca',
+		NENHUMA: 'nenhuma'
 	},
 	PecaPreta: function() {
+		this.cor = DamasJS.Cor.PRETA;
 		this.ehPreta = function() { return true; };
 		this.ehBranca = function() { return false; };
 		this.ehVazia = function() {return false; }
 	},
 	PecaBranca: function() {
+		this.cor = DamasJS.Cor.BRANCA;
 		this.ehPreta = function() { return false; };
 		this.ehBranca = function() { return true; };
 		this.ehVazia = function() {return false; }
 	},
 	PecaVazia: function() {
+		this.cor = DamasJS.Cor.NENHUMA;
 		this.ehPreta = function() { return false; };
 		this.ehBranca = function() { return false; };
 		this.ehVazia = function() {return true; }
@@ -87,13 +114,24 @@ var DamasJS = {
 		this.coluna = coluna;
 		this.cor = cor;
 		this.vizinhos = [];
+		this.direcaoVizinhos = [];
 		this.marcada = false;
+		this.pulo = false;
 		this.peca = new DamasJS.PecaVazia();
 		this.trocarPecaCom = function(outraCelula)
 		{
 			var aux = outraCelula.peca;
 			outraCelula.peca = this.peca;
 			this.peca = aux;
+		};
+		this.pularPara = function(outraCelula, celulaDoMeio)
+		{
+			celulaDoMeio.peca = new DamasJS.PecaVazia();
+			this.trocarPecaCom(outraCelula);
+		};
+		this.distancia = function(outraCelula)
+		{
+			return Math.abs(this.linha-outraCelula.linha) + Math.abs(this.coluna-outraCelula.coluna);
 		};
 	},
 	Tabuleiro: function(linhas, colunas, pecas){
@@ -103,13 +141,14 @@ var DamasJS = {
 		this.marcadas = [];
 		this.estado = DamasJS.Estado.ESPERANDO_BRANCA;
 		this.selecionada = null;
+		this.pulos = [];
 		this.assinalarOsVizinhosDaProximaLinhaParaUmaLinha = function(indice)
 		{
 			var linha = this.celulas[indice];
 			var proximaLinha = this.celulas[indice+1];
-			var primeiraCelulaDaLinha = linha[indice];
+			var primeiraCelulaDaLinha = linha[0];
 			var ultimaCelulaDaLinha = linha[linha.length-1];
-			var segundaCelulaDaProximaLinha = proximaLinha[indice+1];
+			var segundaCelulaDaProximaLinha = proximaLinha[1];
 			var penultimaCelulaDaProximaLinha = proximaLinha[proximaLinha.length-2];
 			primeiraCelulaDaLinha.vizinhos.push(segundaCelulaDaProximaLinha);
 			for(var j = 1; j < this.colunas-1; j++)
@@ -157,7 +196,10 @@ var DamasJS = {
 		{
 			for(var i = 0; i < this.marcadas.length; i++)
 				this.marcadas[i].marcada = false;
+			for(var i = 0; i < this.pulos.length; i++)
+				this.pulos[i].destino.pulo = false;
 			this.marcadas = [];
+			this.pulos = [];
 		};
 		this.criarCelulas = function()
 		{
@@ -206,12 +248,38 @@ var DamasJS = {
 				}
 			}
 		};
+		this.marcarPulos = function(celula)
+		{
+			for(var i = 0; i < celula.vizinhos.length; i++)
+			{
+				var vizinho = celula.vizinhos[i];
+				for(var j = 0; j < vizinho.vizinhos.length; j++)
+				{
+					var vizinhoDoVizinho = vizinho.vizinhos[j];
+					var corDiferente = (celula.peca.ehPreta() && vizinho.peca.ehBranca()) ||
+							 		   (celula.peca.ehBranca() && vizinho.peca.ehPreta());
+					if(vizinhoDoVizinho.distancia(celula) == 4)
+					{
+						if(vizinhoDoVizinho.peca.ehVazia() && corDiferente)
+						{
+							this.pulos.push({destino: vizinhoDoVizinho, meio: vizinho});
+							vizinhoDoVizinho.pulo = true;
+						}
+					}
+				}
+			}
+		};
 		this.selecionar = function(celula)
 		{
 			this.desmarcarTodas();
-			var vizinhos = celula.vizinhos;
-			for(var i = 0; i < vizinhos.length; i++)
-				this.marcar(vizinhos[i]);
+			this.marcarPulos(celula);
+			if(this.pulos.length == 0)
+			{
+				console.log("sem pulos");
+				var vizinhos = celula.vizinhos;
+				for(var i = 0; i < vizinhos.length; i++)
+					this.marcar(vizinhos[i]);	
+			}
 			this.selecionada = celula;
 		};
 		this.criarCelulas();
